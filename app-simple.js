@@ -178,6 +178,11 @@ async function sendFileToBot() {
     }
 }
 
+// Переменные для хранения данных о результате
+let resultFileId = null;
+let resultFileName = null;
+let resultFileUniqueId = null;
+
 // Отправка текстовых требований - автоматически через Bot API
 async function sendTextRequirements() {
     const requirements = document.getElementById('requirementsText').value.trim();
@@ -201,54 +206,177 @@ async function sendTextRequirements() {
     tg.MainButton.show();
     tg.MainButton.disable();
     
+    // ПРОБЛЕМА: Сообщения, отправленные через Bot API, НЕ попадают в webhook
+    // Решение: Открываем чат с готовым текстом, чтобы пользователь отправил сообщение сам
+    tg.MainButton.hide();
+    const encodedText = encodeURIComponent(requirements);
+    
+    // Открываем чат с готовым текстом в поле ввода
+    tg.openTelegramLink(`https://t.me/${botUsername}?text=${encodedText}`);
+    
+    tg.showAlert('✅ Чат открыт с готовыми требованиями. Нажмите "Отправить" в чате, чтобы отправить требования боту.');
+    
+    // Показываем шаг 3 после того, как пользователь вернется
+    setTimeout(() => {
+        showStep3();
+        // Начинаем автоматическую проверку через 30 секунд
+        setTimeout(() => {
+            checkForResult();
+            // Устанавливаем периодическую проверку каждые 5 секунд
+            window.resultCheckInterval = setInterval(checkForResult, 5000);
+        }, 30000);
+    }, 2000);
+}
+
+// Показать шаг 3 (ожидание результата)
+function showStep3() {
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'block';
+    document.getElementById('processingStatus').style.display = 'block';
+    document.getElementById('resultStatus').style.display = 'none';
+    document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Проверка готовности результата
+async function checkForResult() {
+    if (!botToken) {
+        tg.showAlert('Для получения результата нужен токен бота в URL');
+        return;
+    }
+    
+    const user = tg.initDataUnsafe?.user;
+    if (!user) {
+        return;
+    }
+    
+    const chatId = user.id;
+    
     try {
-        // Отправляем требования через Telegram Bot API (если есть токен)
-        if (botToken) {
-            try {
-                const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        chat_id: chatId,
-                        text: requirements
-                    })
-                });
+        // Получаем последние сообщения от бота
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-10&limit=10`, {
+            method: 'GET'
+        });
+        
+        const result = await response.json();
+        
+        if (result.ok && result.result) {
+            // Ищем последнее сообщение от бота с документом в нужном чате
+            for (let i = result.result.length - 1; i >= 0; i--) {
+                const update = result.result[i];
+                const message = update.message;
                 
-                const result = await response.json();
-                
-                if (result.ok) {
-                    tg.MainButton.hide();
-                    tg.showAlert('✅ Требования успешно отправлены! Бот обработает документ и отправит результат.');
+                if (message && 
+                    message.chat.id == chatId && 
+                    message.from && 
+                    message.from.username === botUsername.replace('@', '') &&
+                    message.document) {
                     
-                    // Закрываем Mini App через 2 секунды
-                    setTimeout(() => {
-                        tg.close();
-                    }, 2000);
+                    // Нашли документ от бота!
+                    resultFileId = message.document.file_id;
+                    resultFileName = message.document.file_name || 'edited_document';
+                    resultFileUniqueId = message.document.file_unique_id;
+                    
+                    // Показываем результат
+                    showResult();
                     return;
-                } else {
-                    throw new Error(result.description || 'Ошибка отправки требований');
                 }
-            } catch (error) {
-                console.error('Ошибка отправки через Bot API:', error);
-                // Fallback на открытие чата с текстом
             }
         }
         
-        // Fallback: открываем чат с готовым текстом (если нет токена)
-        tg.MainButton.hide();
-        const encodedText = encodeURIComponent(requirements);
-        tg.openTelegramLink(`https://t.me/${botUsername}?text=${encodedText}`);
-        
-        tg.showAlert('✅ Откройте чат и нажмите "Отправить" для отправки требований.');
+        // Альтернативный способ: проверяем последние сообщения в чате
+        try {
+            const chatResponse = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=${chatId}`, {
+                method: 'GET'
+            });
+            // Этот метод не всегда работает, но попробуем
+        } catch (e) {
+            // Игнорируем
+        }
         
     } catch (error) {
-        console.error('Ошибка:', error);
-        tg.MainButton.hide();
-        tg.showAlert('Ошибка при отправке требований. Попробуйте отправить боту вручную.');
-        tg.openTelegramLink(`https://t.me/${botUsername}`);
+        console.error('Ошибка проверки результата:', error);
     }
+}
+
+// Показать результат
+function showResult() {
+    // Останавливаем периодическую проверку
+    if (window.resultCheckInterval) {
+        clearInterval(window.resultCheckInterval);
+        window.resultCheckInterval = null;
+    }
+    
+    document.getElementById('processingStatus').style.display = 'none';
+    document.getElementById('resultStatus').style.display = 'block';
+    document.getElementById('resultFileInfo').innerHTML = `<p class="hint">📄 ${resultFileName}</p>`;
+    
+    tg.showAlert('✅ Документ готов! Можете скачать его.');
+}
+
+// Скачать результат
+async function downloadResult() {
+    if (!resultFileId || !botToken) {
+        tg.showAlert('Ошибка: файл не найден');
+        return;
+    }
+    
+    try {
+        // Получаем путь к файлу
+        const filePathResponse = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${resultFileId}`);
+        const filePathResult = await filePathResponse.json();
+        
+        if (filePathResult.ok) {
+            const filePath = filePathResult.result.file_path;
+            const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+            
+            // Скачиваем файл
+            const fileResponse = await fetch(fileUrl);
+            const blob = await fileResponse.blob();
+            
+            // Создаем ссылку для скачивания
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = resultFileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(downloadUrl);
+            
+            tg.showAlert('✅ Файл скачивается!');
+        } else {
+            throw new Error('Не удалось получить путь к файлу');
+        }
+    } catch (error) {
+        console.error('Ошибка скачивания:', error);
+        tg.showAlert('Ошибка при скачивании файла. Попробуйте получить его из чата с ботом.');
+    }
+}
+
+// Начать новый документ
+function startNew() {
+    // Останавливаем проверку
+    if (window.resultCheckInterval) {
+        clearInterval(window.resultCheckInterval);
+        window.resultCheckInterval = null;
+    }
+    
+    // Сбрасываем состояние
+    resultFileId = null;
+    resultFileName = null;
+    resultFileUniqueId = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('requirementsText').value = '';
+    
+    // Показываем шаг 1
+    document.getElementById('step3').style.display = 'none';
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step1').style.display = 'block';
+    document.getElementById('fileInfo').style.display = 'none';
+    document.getElementById('uploadArea').style.display = 'block';
+    
+    // Скроллим вверх
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function closeMiniApp() {
