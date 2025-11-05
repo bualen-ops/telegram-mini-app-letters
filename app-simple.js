@@ -178,8 +178,8 @@ async function sendFileToBot() {
     }
 }
 
-// Отправка текстовых требований - открываем чат с готовым текстом
-function sendTextRequirements() {
+// Отправка текстовых требований - автоматически через Bot API
+async function sendTextRequirements() {
     const requirements = document.getElementById('requirementsText').value.trim();
     
     if (!requirements) {
@@ -187,16 +187,68 @@ function sendTextRequirements() {
         return;
     }
     
-    // Открываем чат с ботом с готовым текстом
-    const encodedText = encodeURIComponent(requirements);
-    tg.openTelegramLink(`https://t.me/${botUsername}?text=${encodedText}`);
+    // Получаем данные пользователя из Telegram
+    const user = tg.initDataUnsafe?.user;
+    if (!user) {
+        tg.showAlert('Ошибка: не удалось получить данные пользователя');
+        return;
+    }
     
-    tg.showAlert('✅ Требования отправлены! Бот обработает документ и отправит результат.');
+    const chatId = user.id;
     
-    // Закрываем Mini App через 2 секунды
-    setTimeout(() => {
-        tg.close();
-    }, 2000);
+    // Показываем индикатор отправки
+    tg.MainButton.setText('📤 Отправка требований...');
+    tg.MainButton.show();
+    tg.MainButton.disable();
+    
+    try {
+        // Отправляем требования через Telegram Bot API (если есть токен)
+        if (botToken) {
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: requirements
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.ok) {
+                    tg.MainButton.hide();
+                    tg.showAlert('✅ Требования успешно отправлены! Бот обработает документ и отправит результат.');
+                    
+                    // Закрываем Mini App через 2 секунды
+                    setTimeout(() => {
+                        tg.close();
+                    }, 2000);
+                    return;
+                } else {
+                    throw new Error(result.description || 'Ошибка отправки требований');
+                }
+            } catch (error) {
+                console.error('Ошибка отправки через Bot API:', error);
+                // Fallback на открытие чата с текстом
+            }
+        }
+        
+        // Fallback: открываем чат с готовым текстом (если нет токена)
+        tg.MainButton.hide();
+        const encodedText = encodeURIComponent(requirements);
+        tg.openTelegramLink(`https://t.me/${botUsername}?text=${encodedText}`);
+        
+        tg.showAlert('✅ Откройте чат и нажмите "Отправить" для отправки требований.');
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        tg.MainButton.hide();
+        tg.showAlert('Ошибка при отправке требований. Попробуйте отправить боту вручную.');
+        tg.openTelegramLink(`https://t.me/${botUsername}`);
+    }
 }
 
 function closeMiniApp() {
