@@ -206,8 +206,7 @@ async function sendTextRequirements() {
     tg.MainButton.show();
     tg.MainButton.disable();
     
-    // ПРОБЛЕМА: Сообщения, отправленные через Bot API, НЕ попадают в webhook
-    // Решение: Открываем чат с готовым текстом, чтобы пользователь отправил сообщение сам
+    // Открываем чат с готовым текстом, чтобы пользователь отправил сообщение сам
     tg.MainButton.hide();
     const encodedText = encodeURIComponent(requirements);
     
@@ -219,12 +218,6 @@ async function sendTextRequirements() {
     // Показываем шаг 3 после того, как пользователь вернется
     setTimeout(() => {
         showStep3();
-        // Начинаем автоматическую проверку через 30 секунд
-        setTimeout(() => {
-            checkForResult();
-            // Устанавливаем периодическую проверку каждые 5 секунд
-            window.resultCheckInterval = setInterval(checkForResult, 5000);
-        }, 30000);
     }, 2000);
 }
 
@@ -233,7 +226,6 @@ function showStep3() {
     document.getElementById('step2').style.display = 'none';
     document.getElementById('step3').style.display = 'block';
     document.getElementById('processingStatus').style.display = 'block';
-    document.getElementById('resultStatus').style.display = 'none';
     document.getElementById('step3').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -252,8 +244,12 @@ async function checkForResult() {
     const chatId = user.id;
     
     try {
-        // Получаем последние сообщения от бота
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-10&limit=10`, {
+        // Проблема: getUpdates не возвращает исходящие сообщения бота
+        // Решение: Используем getUpdates с большим limit и проверяем все сообщения
+        // Но лучше использовать другой подход - проверять через channel_post или через webhook callback
+        
+        // Попытка 1: Получаем последние обновления
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?limit=50`, {
             method: 'GET'
         });
         
@@ -261,37 +257,41 @@ async function checkForResult() {
         
         if (result.ok && result.result) {
             // Ищем последнее сообщение от бота с документом в нужном чате
+            // Проверяем как message, так и channel_post (для каналов)
             for (let i = result.result.length - 1; i >= 0; i--) {
                 const update = result.result[i];
-                const message = update.message;
+                const message = update.message || update.channel_post;
                 
                 if (message && 
-                    message.chat.id == chatId && 
-                    message.from && 
-                    message.from.username === botUsername.replace('@', '') &&
-                    message.document) {
+                    message.chat && 
+                    String(message.chat.id) === String(chatId)) {
                     
-                    // Нашли документ от бота!
-                    resultFileId = message.document.file_id;
-                    resultFileName = message.document.file_name || 'edited_document';
-                    resultFileUniqueId = message.document.file_unique_id;
+                    // Проверяем, что это сообщение от бота (или любое сообщение с документом)
+                    const isFromBot = message.from && message.from.is_bot === true;
+                    const botUsernameClean = botUsername.replace('@', '').toLowerCase();
+                    const messageFromUsername = message.from?.username?.toLowerCase() || '';
                     
-                    // Показываем результат
-                    showResult();
-                    return;
+                    // Если это документ от нашего бота или просто документ в нашем чате
+                    if (message.document && (isFromBot && messageFromUsername === botUsernameClean || !isFromBot)) {
+                        // Нашли документ!
+                        resultFileId = message.document.file_id;
+                        resultFileName = message.document.file_name || 'edited_document';
+                        resultFileUniqueId = message.document.file_unique_id;
+                        
+                        console.log('✅ Найден документ:', resultFileName);
+                        
+                        // Показываем результат
+                        showResult();
+                        return;
+                    }
                 }
             }
         }
         
-        // Альтернативный способ: проверяем последние сообщения в чате
-        try {
-            const chatResponse = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=${chatId}`, {
-                method: 'GET'
-            });
-            // Этот метод не всегда работает, но попробуем
-        } catch (e) {
-            // Игнорируем
-        }
+        // Попытка 2: Используем getChatHistory (но этот метод недоступен в Bot API)
+        // Вместо этого просто сообщаем пользователю, что нужно проверить чат
+        
+        console.log('Документ еще не найден в обновлениях');
         
     } catch (error) {
         console.error('Ошибка проверки результата:', error);
@@ -355,16 +355,7 @@ async function downloadResult() {
 
 // Начать новый документ
 function startNew() {
-    // Останавливаем проверку
-    if (window.resultCheckInterval) {
-        clearInterval(window.resultCheckInterval);
-        window.resultCheckInterval = null;
-    }
-    
     // Сбрасываем состояние
-    resultFileId = null;
-    resultFileName = null;
-    resultFileUniqueId = null;
     document.getElementById('fileInput').value = '';
     document.getElementById('requirementsText').value = '';
     
@@ -381,5 +372,10 @@ function startNew() {
 
 function closeMiniApp() {
     tg.close();
+}
+
+// Открыть чат с ботом
+function openChat() {
+    tg.openTelegramLink(`https://t.me/${botUsername}`);
 }
 
