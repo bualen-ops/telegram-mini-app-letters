@@ -3,9 +3,10 @@ const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 
-// Получаем username бота из URL параметров
+// Получаем username бота и токен из URL параметров
 const urlParams = new URLSearchParams(window.location.search);
 let botUsername = urlParams.get('bot');
+const botToken = urlParams.get('token'); // Опционально: токен для прямой отправки файлов
 
 // Если username не передан в URL, пытаемся получить из Telegram WebApp
 if (!botUsername && tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
@@ -55,17 +56,126 @@ function switchTab(tab) {
     }
 }
 
-// Отправка файла - открываем чат с ботом
-function sendFileToBot() {
-    // Открываем чат с ботом
-    tg.openTelegramLink(`https://t.me/${botUsername}`);
+// Отправка файла через Telegram Bot API
+async function sendFileToBot() {
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
     
-    tg.showAlert('📤 Откройте чат с ботом и отправьте файл. Затем вернитесь сюда для ввода требований.');
+    if (!file) {
+        tg.showAlert('Пожалуйста, выберите файл');
+        return;
+    }
     
-    // Показываем шаг 2
-    setTimeout(() => {
-        document.getElementById('step2').style.display = 'block';
-    }, 1000);
+    // Получаем данные пользователя из Telegram
+    const user = tg.initDataUnsafe?.user;
+    if (!user) {
+        tg.showAlert('Ошибка: не удалось получить данные пользователя');
+        return;
+    }
+    
+    const chatId = user.id;
+    
+    // Показываем индикатор загрузки
+    tg.MainButton.setText('📤 Отправка файла...');
+    tg.MainButton.show();
+    tg.MainButton.disable();
+    
+    try {
+        // Читаем файл
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64Data = e.target.result.split(',')[1];
+            
+            // Отправляем файл через Telegram Bot API
+            // Нужен токен бота - используем переменную окружения или webhook
+            // Для безопасности используем webhook в n8n
+            
+            // Вариант 1: Webhook в n8n (если настроен)
+            // Раскомментируйте и укажите ваш webhook URL:
+            /*
+            const webhookUrl = 'https://ВАШ-N8N-URL/webhook/telegram-mini-app-file';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('chatId', chatId);
+            formData.append('fileName', file.name);
+            
+            try {
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    tg.MainButton.hide();
+                    tg.showAlert('✅ Файл успешно отправлен! Теперь введите требования.');
+                    setTimeout(() => {
+                        document.getElementById('step2').style.display = 'block';
+                    }, 1000);
+                    return;
+                }
+            } catch (error) {
+                console.error('Ошибка отправки через webhook:', error);
+            }
+            */
+            
+            // Вариант 2: Отправка через Telegram Bot API напрямую (если есть токен)
+            if (botToken) {
+                try {
+                    const formData = new FormData();
+                    formData.append('document', file);
+                    formData.append('chat_id', chatId);
+                    
+                    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.ok) {
+                        tg.MainButton.hide();
+                        tg.showAlert('✅ Файл успешно отправлен боту! Теперь введите требования.');
+                        setTimeout(() => {
+                            document.getElementById('step2').style.display = 'block';
+                            document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+                        }, 1000);
+                        return;
+                    } else {
+                        throw new Error(result.description || 'Ошибка отправки файла');
+                    }
+                } catch (error) {
+                    console.error('Ошибка отправки через Bot API:', error);
+                    // Fallback на ручную отправку
+                }
+            }
+            
+            // Вариант 3: Ручная отправка (если нет токена или webhook)
+            tg.MainButton.hide();
+            tg.showAlert('📤 Откройте чат с ботом и отправьте файл. После отправки вернитесь сюда для ввода требований.');
+            
+            // Открываем чат с ботом
+            tg.openTelegramLink(`https://t.me/${botUsername}`);
+            
+            // Показываем шаг 2 через 2 секунды (пользователь вернется)
+            setTimeout(() => {
+                document.getElementById('step2').style.display = 'block';
+                tg.MainButton.setText('✅ Файл отправлен, ввести требования');
+                tg.MainButton.onClick(() => {
+                    document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+                });
+                tg.MainButton.show();
+                tg.MainButton.enable();
+            }, 2000);
+        };
+        
+        reader.readAsDataURL(file);
+    } catch (error) {
+        console.error('Ошибка:', error);
+        tg.MainButton.hide();
+        tg.showAlert('Ошибка при подготовке файла. Попробуйте отправить файл боту вручную.');
+        tg.openTelegramLink(`https://t.me/${botUsername}`);
+    }
 }
 
 // Отправка текстовых требований - открываем чат с готовым текстом
