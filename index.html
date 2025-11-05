@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Редактор документов</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 Редактор документов</h1>
+            <p class="subtitle">Обработка документов через AI</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Шаг 1: Загрузка документа -->
+            <div class="step" id="step1">
+                <h2>Шаг 1: Загрузите документ</h2>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept=".doc,.docx,.txt,.md" style="display: none;">
+                    <div class="upload-icon">📄</div>
+                    <p>Нажмите, чтобы выбрать файл</p>
+                    <p class="file-formats">Поддерживаемые форматы: .doc, .docx, .txt, .md</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        Выбрать файл
+                    </button>
+                </div>
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <p>✅ Файл выбран: <span id="fileName"></span></p>
+                    <p class="hint">📤 Нажмите кнопку ниже, чтобы отправить файл боту</p>
+                    <button class="btn btn-primary" onclick="sendFileToBot()">
+                        Отправить файл боту
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearFile()">Изменить файл</button>
+                </div>
+            </div>
+
+            <!-- Шаг 2: Ввод требований -->
+            <div class="step" id="step2" style="display: none;">
+                <h2>Шаг 2: Введите требования</h2>
+                <div class="requirements-tabs">
+                    <button class="tab-btn active" onclick="switchTab('text')">📝 Текст</button>
+                    <button class="tab-btn" onclick="switchTab('voice')">🎤 Голос</button>
+                </div>
+
+                <!-- Текстовый ввод -->
+                <div class="tab-content active" id="textTab">
+                    <textarea 
+                        id="requirementsText" 
+                        placeholder="Например: Сделать более формальный тон, добавить упоминание опыта работы с проектами..."
+                        rows="4"
+                    ></textarea>
+                    <button class="btn btn-primary" onclick="sendTextRequirements()">
+                        Отправить требования
+                    </button>
+                </div>
+
+                <!-- Голосовой ввод -->
+                <div class="tab-content" id="voiceTab">
+                    <div class="voice-recorder">
+                        <p class="hint">🎤 Используйте кнопку записи голоса в Telegram</p>
+                        <p class="hint">Или отправьте голосовое сообщение боту напрямую</p>
+                        <button class="btn btn-secondary" onclick="closeMiniApp()">
+                            Открыть чат с ботом
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Инструкция -->
+            <div class="step info-step">
+                <h2>💡 Как использовать</h2>
+                <ol class="instructions">
+                    <li>Выберите и отправьте документ боту</li>
+                    <li>Дождитесь подтверждения от бота</li>
+                    <li>Введите требования текстом или отправьте голосовое сообщение</li>
+                    <li>Получите обработанный документ</li>
+                </ol>
+            </div>
+        </div>
+
+        <footer>
+            <p>👨‍💻 Разработчик: Бубновский Ален</p>
+            <p>📞 Контакты: 89097919466</p>
+        </footer>
+    </div>
+
+    <script src="app-simple.js"></script>
+</body>
+</html>
+
